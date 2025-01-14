@@ -1,5 +1,5 @@
 
-# GPU 対応 TensorFlow セットアップ奮闘記
+# GPU 対応 機械学習 セットアップ奮闘記
 
 ## 1. 概要
 
@@ -152,3 +152,195 @@ print("GPU:", tf.config.list_physical_devices('GPU'))
 - [TensorFlow Install (Official)](https://www.tensorflow.org/install)
 - [Anaconda Documentation](https://docs.anaconda.com/)
 - [cuDNN Download (NVIDIA)](https://developer.nvidia.com/cudnn)
+# PyTorch GPU 使用セットアップの記録
+
+## 概要
+Windows 11 + Anaconda 環境で PyTorch を使用する際に、GPU が正しく認識されない問題が発生した。これは CPU 版の PyTorch がデフォルトでインストールされていたため、GPU 版の PyTorch を再インストールして問題を解決した。ここには該問題とその解決手順を記録する。
+
+## 問題
+1. **CPU 版の PyTorch がデフォルトでインストールされた**  
+    これにより、GPU が認識されない問題が発生。  
+
+2. **GPU が認識されないコード例**:
+    ```python
+    import torch
+    print(torch.cuda.is_available())
+    # False が返ってくる
+    ```
+
+3. **TensorFlow で構築した CUDA/cuDNN と PyTorch の認識に違いがある**  
+    - TensorFlow 用に構築した CUDA 11.8 + cuDNN 8.x は正しく動作していたが、PyTorch でも GPU を認識させるために GPU 版 PyTorch を再インストールする必要があった。
+
+---
+
+## 解決手順
+
+### 1. CPU 版 PyTorch のアンインストール
+1. **現在の PyTorch を削除**
+    下記コマンドを VSCode や Anaconda Prompt で実行:
+    ```bash
+    pip uninstall torch torchvision torchaudio
+    ```
+
+---
+
+### 2. GPU 版 PyTorch の再インストール
+PyTorch の [公式インストールガイド](https://pytorch.org/get-started/locally/) に基づき、CUDA 11.8 に対応した PyTorch GPU 版をインストールした。
+
+#### 2.1 pip を使う場合
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+#### 2.2 conda を使う場合
+```bash
+conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
+```
+
+---
+
+### 3. GPU 利用可能かの確認
+1. Python ターミナルから下記を実行:
+    ```python
+    import torch
+    print(torch.__version__)           # PyTorch のバージョン
+    print(torch.version.cuda)          # 使用される CUDA バージョン
+    print(torch.cuda.is_available())   # True なら GPU が認識されている
+    ```
+
+2. 結果、正しく GPU が認識されれば下記のような結果が返される:
+    ```plaintext
+    2.0.1+cu118
+    11.8
+    True
+    ```
+
+---
+
+## 実装したコード例
+GPU が認識された PyTorch で、MNIST データセットを使用したデータローダのコード:
+
+```python
+import torch
+import torchvision
+from torchvision import transforms
+from torch.utils.data import DataLoader
+
+# データローダの設定
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
+
+train_dataset = torchvision.datasets.MNIST(root='./data', train=True, transform=transform, download=True)
+train_loader = DataLoader(dataset=train_dataset, batch_size=64, shuffle=True)
+
+# GPU の利用確認
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
+
+# モデル例
+model = torch.nn.Linear(784, 10).to(device)
+
+# テンソルを試す
+for images, labels in train_loader:
+    images = images.view(-1, 28*28).to(device)
+    labels = labels.to(device)
+    outputs = model(images)
+    print("Batch processed.")
+    break
+```
+
+---
+
+## 最終的な環境
+- **OS**: Windows 11
+- **Python**: 3.9
+- **PyTorch**: 2.x (CUDA 11.8)
+- **CUDA**: 11.8
+- **cuDNN**: 8.x
+- **GPU**: NVIDIA RTX 2080
+
+## 学んだこと
+1. PyTorch のバージョンに対応した CUDA/cuDNN のバージョンを選ぶことが重要。
+2. TensorFlow との CUDA ライブラリを共有できることもあるが、PyTorch の実行バイナリを GPU 版にする必要がある。
+3. 常に `torch.cuda.is_available()` で GPU が認識されているかを確認すること。
+
+PowerShell で `where python` を実行しても何も表示されない場合、**システムの PATH** に Python が通っていない（または `conda activate` が効いていない）ことが考えられます。  
+以下のポイントを順番にチェックしてみてください。
+
+---
+
+## 1. Anaconda 環境を PowerShell 上で有効化する方法
+
+### 1.1 `conda init powershell` を実行
+
+1. **Anaconda Prompt**（または `cmd.exe` でも可）を開き、下記コマンドを実行します。
+   ```bash
+   conda init powershell
+   ```
+2. 「Initialization finished successfully」と出れば OK です。  
+3. PowerShell を一度すべて閉じ、再度 PowerShell を開いてみてください。  
+   - すると、PowerShell 起動時に自動で conda が初期化され、`(base)` などが表示されるようになります。
+
+### 1.2 `conda activate tf-gpu` する
+
+PowerShell を開いたあとに、
+```powershell
+conda activate tf-gpu
+```
+と入力し、`(tf-gpu)` と表示されれば、**tf-gpu 環境**がアクティブになっています。  
+この状態で、
+```powershell
+where python
+```
+と打てば、  
+```
+C:\Users\h-seno\anaconda3\envs\tf-gpu\python.exe
+```
+のように **tf-gpu 環境の python.exe** が表示されるはずです。
+
+---
+
+## 2. VSCode のターミナルで同じことを行う
+
+VSCode のターミナルで PowerShell を使用している場合も、**事前に `conda init powershell` を済ませておけば**、VSCode の新しいターミナルでも `(base)` が自動表示されるようになります。
+
+- もし `(base)` が表示されたら、`conda activate tf-gpu` で tf-gpu 環境へ切り替え。  
+- その状態で
+  ```powershell
+  where python
+  ```
+  を実行すると、`tf-gpu` 環境のパスが返ってくるはずです。
+
+### 2.1 VSCode の「Python: Select Interpreter」も確認
+
+- VSCode 左下のステータスバー、または「コマンドパレット (`Ctrl+Shift+P`) → Python: Select Interpreter」で **`Python 3.9 (tf-gpu)`** を選ぶと、VSCode エディタ上の実行でも tf-gpu 環境が使われます。  
+- ただし、**VSCode ターミナル** は別途 `conda activate tf-gpu` が必要（または自動化設定が必要）なので注意。
+
+---
+
+## 3. それでも表示されないときのチェック項目
+
+1. **本当に Anaconda がインストールされているか**  
+   - もし `conda` コマンド自体も認識されないなら、Anaconda の PATH が通っていない可能性が高いです。
+   - Anaconda Prompt ではなく Windows 標準の PowerShell を開いていると、デフォルトで conda が使えない設定になっていることがあります。
+
+2. **OneDrive 上のフォルダで実行している影響**  
+   - 特にありませんが、OneDrive が原因で PATH が変わることは基本的にありません。  
+   - ただし VSCode のワークスペースが OneDrive でも、Python がローカルにインストールされていれば問題ありません。
+
+3. **Windows の実行ポリシー**  
+   - まれに PowerShell の実行ポリシーが厳しく、`conda init powershell` したスクリプトが実行できない場合があります。  
+   - その場合、`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` などを設定してみてください（詳細は [Microsoft Docs](https://learn.microsoft.com/ja-jp/powershell/module/microsoft.powershell.security/set-executionpolicy) 参照）。
+
+---
+
+## 4. まとめ
+
+1. **`conda init powershell` → PowerShell を再起動** して、`conda` が使える状態にする。  
+2. **`conda activate tf-gpu`** で tf-gpu 環境をアクティブ化する。  
+3. **`where python`** すれば `...\envs\tf-gpu\python.exe` が表示される。  
+4. VSCode のターミナルでも同様に「PowerShell + conda init」済みであれば、`conda activate tf-gpu` で切り替えて使う。
+
+こうすれば、PowerShell と VSCode のターミナル上でも問題なく Python インタープリタが見つかるようになるはずです。
